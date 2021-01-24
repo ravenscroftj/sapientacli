@@ -1,0 +1,23 @@
+[tool.poetry]
+name = "sapientacli"
+version = "0.1.0"
+description = "A simple command line tool for usage of SAPIENTA API (https://sapienta.papro.org.uk)"
+authors = ["James Ravenscroft <ravenscroftj@gmail.com>"]
+license = "MIT"
+
+[tool.poetry.dependencies]
+python = "^3.6.1"
+websockets = "^8.1"
+click = "^7.1.2"
+asyncio = "^3.4.3"
+aiohttp = "^3.7.3"
+tqdm = "^4.56.0"
+
+[tool.poetry.dev-dependencies]
+rope = "^0.18.0"
+autopep8 = "^1.5.4"
+flake8 = "^3.8.4"
+
+[build-system]
+requires = ["poetry-core>=1.0.0"]
+build-backend = "poetry.core.masonry.api"
