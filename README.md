@@ -2,7 +2,7 @@
 [![PyPi Release](https://img.shields.io/pypi/v/sapientacli.svg)](https://pypi.org/project/sapientacli/)
 [![License: GPL v3+](https://img.shields.io/badge/license-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 
-This repository provides a super lightweight CLI wrapper around the [SAPIENTA paper extraction API](https://sapienta.pappro.org.uk/)
+This repository provides a super lightweight CLI wrapper around the [SAPIENTA paper extraction API](https://sapienta.papro.org.uk/). It uses websockets to submit and monitor a large number of annotation jobs.
 
 ![SAPIENTA CLI in action](https://raw.githubusercontent.com/ravenscroftj/sapientacli/main/assets/screenrecording.gif)
 
