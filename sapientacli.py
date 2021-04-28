@@ -1,18 +1,21 @@
+from typing import List
 import websockets
 import click
 import asyncio
 import json
 import os
+import logging
 import aiohttp
 import tqdm
 import tqdm.asyncio
 
 ENDPOINT = os.environ.get("SAPIENTA_ENDPOINT", "https://sapienta.papro.org.uk")
 
+logger = logging.getLogger("sapientacli")
+
 
 async def submit_job(file_path: str) -> dict:
     """Submit job for processing, return ID on queue"""
-
 
     data = {'file': open(file_path, 'rb')}
     
@@ -21,10 +24,10 @@ async def submit_job(file_path: str) -> dict:
             return await response.json()
 
 
-async def submit_and_subscribe(filename, websocket):
+async def submit_and_subscribe(filename, websocket, job_map):
     response = await submit_job(filename)
     await websocket.send(json.dumps({"action":"subscribe", "job_id":response['job_id']}))
-    return response['job_id']
+    job_map[response['job_id']] = filename
 
 async def collect_result(job_id, local_filename):
     """Collect the results for the given job and store"""
@@ -47,50 +50,55 @@ def infer_result_name(input_name):
     return newpath
 
 
-async def execute(files):
+async def handle_results(websocket, job_map, total_files):
+
+    done = 0
+
+    with tqdm.tqdm(desc="annotation progress", total=total_files) as pbar:
+        while done < total_files:
+            resptext = await websocket.recv()
+
+            try:
+                resp = json.loads(resptext)
+
+                tqdm.tqdm.write(f"{job_map[resp['job_id']]} update: {resp['step']}={resp['status']}")
+
+                if resp['step'] == 'annotate' and resp['status'] == 'complete':
+                    await collect_result(resp['job_id'],job_map[resp['job_id']])
+                    pbar.update()
+                    done += 1
+
+            except Exception as e:
+                tqdm.tqdm.write(f"Could not handle response {resptext}: {e}")
+
+
+async def execute(files: List[str]):
     """This is the real main meat of the app that 'main' wrapps"""
 
     WS_ENDPOINT = ENDPOINT.replace("http","ws", 1)
     uri = f"{WS_ENDPOINT}/ws"
 
-    print(uri)
-
     async with websockets.connect(uri) as websocket:
 
-        responses = 0
+        done = 0
 
         futures = []
+        tasks = set()
+        job_ids = {}
+        job_map = {}
 
+        to_process = set([file for file in files if not os.path.exists(infer_result_name(file))])
+        
         for file in files:
-            if os.path.exists(infer_result_name(file)):
+            if file not in to_process:
                 print(f"Skip existing {file}")
-            futures.append(submit_and_subscribe(file, websocket))
-            responses += 1
 
-        print("Upload PDFS")
-        job_ids = await tqdm.asyncio.tqdm_asyncio.gather(futures)
+        result_handler = asyncio.create_task(handle_results(websocket, job_map, len(to_process)))
 
-        job_map = {job_id:filename for job_id, filename in zip(job_ids, files)}
+        for file in tqdm.tqdm(to_process, desc="upload progress"):
+            await submit_and_subscribe(file, websocket, job_map)
 
-        steps = sum([2 if file.endswith(".xml") else 3 for file in files])
-
-        with tqdm.tqdm(total=steps) as t:
-
-            while responses > 0:
-                resptext = await websocket.recv()
-
-                try:
-                    resp = json.loads(resptext)
-                    t.update()
-
-                    tqdm.tqdm.write(f"{job_map[resp['job_id']]} update: {resp['step']}={resp['status']}")
-
-                    if resp['step'] == 'annotate' and resp['status'] == 'complete':
-                        await collect_result(resp['job_id'],job_map[resp['job_id']])
-                        responses -= 1
-
-                except Exception as e:
-                    tqdm.tqdm.write(f"Could not handle response {resptext}: {e}")
+        await result_handler
 
 
 
@@ -98,6 +106,7 @@ async def execute(files):
 @click.argument("files", nargs=-1, type=click.Path(file_okay=True, exists=True))
 def main(files):
     """Run annotation process"""
+    logging.basicConfig(level=logging.INFO)
     asyncio.get_event_loop().run_until_complete(execute(files))
 
 
