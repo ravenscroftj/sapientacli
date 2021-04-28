@@ -4,7 +4,8 @@ import asyncio
 import json
 import os
 import aiohttp
-from tqdm import tqdm
+import tqdm
+import tqdm.asyncio
 
 ENDPOINT = os.environ.get("SAPIENTA_ENDPOINT", "https://sapienta.papro.org.uk")
 
@@ -28,16 +29,22 @@ async def submit_and_subscribe(filename, websocket):
 async def collect_result(job_id, local_filename):
     """Collect the results for the given job and store"""
 
-    nameroot, _ = os.path.splitext(local_filename)
-
-    newpath = nameroot + "_annotated.xml"
+    newpath = infer_result_name(local_filename)
 
     async with aiohttp.ClientSession() as session:
         async with session.get(f"{ENDPOINT}/{job_id}/result") as response:
             content = await response.text()
 
             with open(newpath,'w') as f:
-                f.write(content)     
+                f.write(content)
+
+
+def infer_result_name(input_name):
+    """Calculate output name for annotated paper"""
+
+    nameroot, _ = os.path.splitext(input_name)
+    newpath = nameroot + "_annotated.xml"
+    return newpath
 
 
 async def execute(files):
@@ -46,6 +53,8 @@ async def execute(files):
     WS_ENDPOINT = ENDPOINT.replace("http","ws", 1)
     uri = f"{WS_ENDPOINT}/ws"
 
+    print(uri)
+
     async with websockets.connect(uri) as websocket:
 
         responses = 0
@@ -53,16 +62,19 @@ async def execute(files):
         futures = []
 
         for file in files:
+            if os.path.exists(infer_result_name(file)):
+                print(f"Skip existing {file}")
             futures.append(submit_and_subscribe(file, websocket))
             responses += 1
 
-        job_ids = await asyncio.gather(*futures)
+        print("Upload PDFS")
+        job_ids = await tqdm.asyncio.tqdm_asyncio.gather(futures)
 
         job_map = {job_id:filename for job_id, filename in zip(job_ids, files)}
 
         steps = sum([2 if file.endswith(".xml") else 3 for file in files])
 
-        with tqdm(total=steps) as t:
+        with tqdm.tqdm(total=steps) as t:
 
             while responses > 0:
                 resptext = await websocket.recv()
@@ -71,14 +83,14 @@ async def execute(files):
                     resp = json.loads(resptext)
                     t.update()
 
-                    tqdm.write(f"{job_map[resp['job_id']]} update: {resp['step']}={resp['status']}")
+                    tqdm.tqdm.write(f"{job_map[resp['job_id']]} update: {resp['step']}={resp['status']}")
 
                     if resp['step'] == 'annotate' and resp['status'] == 'complete':
                         await collect_result(resp['job_id'],job_map[resp['job_id']])
                         responses -= 1
 
                 except Exception as e:
-                    tqdm.write(f"Could not handle response {resptext}: {e}")
+                    tqdm.tqdm.write(f"Could not handle response {resptext}: {e}")
 
 
 
