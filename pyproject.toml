@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "sapientacli"
-version = "0.1.0"
+version = "0.2.0"
 description = "A simple command line tool for usage of SAPIENTA API (https://sapienta.papro.org.uk)"
 authors = ["James Ravenscroft <ravenscroftj@gmail.com>"]
 license = "MIT"
